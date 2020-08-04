@@ -1,0 +1,54 @@
+#!/bin/bash
+
+#source /home/sysop/miniconda3/etc/profile.d/conda.sh
+export MPLBACKEND="agg"
+NCPU=$(( $(grep -c ^processor /proc/cpuinfo) - 1 ))
+MSNOISE="/home/sysop/miniconda3/envs/noise/bin/msnoise"
+PYTHON="/home/sysop/miniconda3/bin/python"
+SLINKTOOL="/home/sysop/slinktool/slinktool/slinktool"
+TIMEOUT="/opt/seiscomp3/bin/timeout"
+BASEURL="http://localhost:8080/fdsnws/station/1/query?level=response&nodata=404&endafter=$(date --iso)" 
+cd /home/sysop/msnoise
+mkdir -p inventory
+
+## update responses
+$TIMEOUT -9 $SLINKTOOL -Q :|sed 's/    / -- /'|grep -i -e " HN. D" -e " HG. D"|while read N S L C T;
+do  
+	F="/home/sysop/msnoise/inventory/${N}.${S}.${L}.${C}.xml"
+	URL="${BASEURL}&network=${N}&station=${S}&location=${L/--/}&channel=${C}"
+	
+	if [[ ! -f "$F" || "/opt/seiscomp3/etc/inventory/inventory.xml" -nt "$F" ]]; then
+		wget $URL -O $F 
+	else
+		echo $F is up to date
+	fi
+done
+
+## Exits if previous not done
+ps -ef |grep -v grep|grep -i -e compute_psd -e new_jobs -e scan_archive &&  echo The previous is not done && exit 1 
+
+## Update PSDs
+$MSNOISE                   populate > populate.log     2>&1
+$MSNOISE -t $NCPU      scan_archive > scan_archive.log 2>&1
+$MSNOISE                   new_jobs > new_jobs.log     2>&1
+$MSNOISE -t $NCPU -v qc compute_psd > compute_psd.log  2>&1
+
+
+
+
+
+
+## furthermore examples
+#$MSNOISE -t 3 compute_cc2
+#$MSNOISE -t 8 -d 10 stack -m
+#$MSNOISE -v compute_mwcs
+
+#$MSNOISE db execute "update jobs set flag='T' where jobtype='DTT' and day>'2019-08-18'"
+
+#$MSNOISE compute_dtt
+
+#$PYTHON custom_dvv.py
+#$PYTHON plotbokeh.py
+#mv dvv*last.png www/img/last/
+#mv dvv*.png www/img/full/
+#mutt tlecocq@oma.be -a www/img/last/dvv_ZZ-f2-m1-MMlast.png -s "MSNoise" < empty.txt &

@@ -1,0 +1,41 @@
+#!/bin/bash
+
+SLINKTOOL="/home/sysop/slinktool/slinktool/slinktool"
+SEISCOMP_ROOT="/opt/seiscomp3/"
+SPEEDTESTSDIR="/home/sysop/slinktool/latencies/"
+LOGS="$SPEEDTESTSDIR/slinktool.log"
+SPONTIT="/home/sysop/.spontit"
+TIMEOUT="/opt/seiscomp3/bin/timeout"
+
+## get slinktool stream selection
+slinkstat () {
+	$TIMEOUT -9 $SLINKTOOL -Q $1 |awk '$0~/Z D/{print $1"_"$2":???"}'|uniq|paste -s  -d,
+}
+
+## get slinktool -p output in SDS
+slinktopSDS () {
+	awk -F'[ _,]' '{printf "mkdir -p '$SPEEDTESTSDIR'%s/%s/%s/%s.D ; echo \"%s\" >> '$SPEEDTESTSDIR'%s/%s/%s/%s.D/%s.%s.%s.%s.D.%s.%s\n",$12,$1,$2,$4,$0,$12,$1,$2,$4,$1,$2,$3,$4,$12,$13}' $1 | bash
+}
+
+date > $LOGS
+
+## loop over URL in seiscomp seedlink bindings
+grep address $SEISCOMP_ROOT/etc/key/seedlink/*|while read P E URL;
+do 
+	## new stations only 
+	ps -ef |grep -v grep|grep slinktool|grep $URL >/dev/null && continue
+	
+	## Selector (non-empty only)
+	SELECTSTAT=`slinkstat $URL`
+	if [ -z "$SELECTSTAT" ]; then
+		continue
+	fi
+
+	## get slinktool -p in SDS 
+	$SLINKTOOL -p $URL -S "$SELECTSTAT" | slinktopSDS /dev/stdin >> $LOGS 2>&1 &
+	
+	## logs
+	echo $(date) speedtests for $URL started >> $LOGS 2>&1
+	$SPONTIT "${SELECTSTAT:0:19} enters slinktool at $(date --iso=seconds)"
+done
+
