@@ -19,12 +19,14 @@ from bokeh.palettes import Category20_16
 from obspy.signal import PPSD
 from obspy.signal.spectral_estimation import get_nlnm, get_nhnm 
 
+import fnmatch
 
-maxnstation = 29
+maxnstation = 29*3
 
 def read(pastdays_select=None,
          bufferdays_select=None, 
-         whitelists = ['CH.*..HG*','XE.*.HN*'],
+         #whitelists = ['CH.*..HG*','XE.*.HN*'],
+         whitelists = ['SV.*.00.HN*','XE.*.00.HN*'],
          slinktooldir = '/home/sysop/slinktool/latencies/',
          psddir = '/home/sysop/msnoise/PSD/NPZ/',
          src=None,
@@ -33,7 +35,17 @@ def read(pastdays_select=None,
     dfs = []
     ppsds = []
     buffersizes = {}
-    
+
+    files = []
+    for w in whitelists:
+        parts = (slinktooldir,w)
+        filenames = '%s/*/*/*/*.D/%s*.????.???'%parts       
+        files += glob.glob(filenames)     
+    yeardays = list(set(['.'.join(f.split('.')[-2:]) for f in files]))
+    mseedids = list(set(['.'.join(f.split('/')[-1].split('.')[:4]) for f in files]))
+    #print(files)#yeardays)
+    #print(mseedids)
+
     now = datetime.now()
     for n in range(int(pastdays_select.value[0]),int(1+pastdays_select.value[1])):
         if len(list(buffersizes.keys()))>=maxnstation:
@@ -41,14 +53,31 @@ def read(pastdays_select=None,
         d = timedelta(days = n)
         year = (now-d).year
         day = (now-d).timetuple().tm_yday
+        if '%s.%s'%(year,day) not in yeardays: 
+            continue
         
+        parts = (slinktooldir,year,year,day)
+        dayfilenames = '%s/%d/*/*/*.D/*.%d.%d'%parts      
+        dayfilenames = dayfilenames.replace('//','/')
+        #print(files)
+        #print(dayfilenames)
+        dayfilenames = [f for f in files if fnmatch.fnmatch(f, dayfilenames)]
+        if len(dayfilenames)==0:
+            continue
+        #print(dayfilenames)
+
         for whitelist in whitelists:            
             if len(list(buffersizes.keys()))>=maxnstation:
                 break
             # Read in data from slinktool
             parts = (slinktooldir,year,whitelist,year,day)
-            filenames = '%s/%d/*/*/*.D/%s.%d.%d'%parts        
-            for filename in glob.glob(filenames):
+            filenames = '%s/%d/*/*/*.D/%s.%d.%d'%parts       
+            filenames = filenames.replace('//','/')
+            #print(filenames)
+            filenames = [f for f in dayfilenames if fnmatch.fnmatch(f, filenames)]
+            #print(filenames)
+
+            for filename in filenames:
                 if len(list(buffersizes.keys()))>=maxnstation:
                     break
                 mseedid = '.'.join(filename.split('/')[-1].split('.')[:4])
@@ -56,7 +85,7 @@ def read(pastdays_select=None,
                     buffersizes[mseedid]=0
                 if buffersizes[mseedid]+1 > np.ceil(bufferdays_select.value):
                     continue
-                print(filename,int(bufferdays_select.value*24*60*60))
+                print('loading %s (%s lines)'%(filename,int(bufferdays_select.value*24*60*60)))
                 buffersizes[mseedid] += 1
                 df = pd.read_csv(filename, 
                                  nrows=int(bufferdays_select.value*24*60*60),
@@ -87,19 +116,24 @@ def read(pastdays_select=None,
                 # get psd
                 filename = glob.glob(filename.replace(slinktooldir,psddir)+'.npz')
                 if len(filename):
+                    print('loading',filename[0])
                     ppsd = PPSD.load_npz(filename[0])
                     rows = []
                     times = []
-                    for indexpsd,time in enumerate(ppsd.times_processed):
-                        if time<min(df['time']) or time>max(df['time']):
+                    indexes = np.argsort(ppsd.times_processed)
+                    for indexpsd in indexes:
+                        time=ppsd.times_processed[indexpsd]
+                        if time<min(df['time']):
                             continue
+                        if time>max(df['time']):
+                            break
                         times += [time.datetime]
                         rows += [[mseedid, ppsd.period_bin_centers, ppsd.psd_values[indexpsd]]]
                     if len(times):
                         ppsds.append(pd.DataFrame(np.array(rows),
                                               index=np.array(times),
                                               columns=['name', 'PSD_periods', 'PSD']))
-
+                #print('OK')
     # Concatenate all data into one DataFrame
     flights = pd.concat(dfs, ignore_index=True)
     ppsds = pd.concat(ppsds, ignore_index=True)
@@ -289,6 +323,8 @@ def make_plot(src, output='Latencies'):
                      hover_line_width = 3,
                      #line_width=0.5
                      )
+        p.legend.location = 'bottom_left'
+        p.legend.orientation = "horizontal"
     else:
         # Quad glyphs to create a histogram
         p.quad(source = src, 
@@ -393,8 +429,8 @@ def update(attr, old, new,
 # Initiate the tab
 def make_tab():
     # Slider to select width of bin
-    pastdays_select = RangeSlider(start = 0, end = 99, 
-                                  value = (0,9), step = 1, 
+    pastdays_select = RangeSlider(start = 0, end = 999, 
+                                  value = (0,999), step = 1, 
                                   title = 'Past Days',
                                   sizing_mode="stretch_both")
     # Slider to select buffer size
@@ -435,7 +471,7 @@ def make_tab():
                          sizing_mode="stretch_both")
     
     # RangeSlider control to select start and end of plotted delays
-    range_select = RangeSlider(start = -1, end = 99, value = (-.2, 99),
+    range_select = RangeSlider(start = -1, end = 999, value = (-.2, 99),
                                step = .1, title = 'Range (sec)',
                                sizing_mode="stretch_both")
  
