@@ -77,7 +77,7 @@ def read(pastdays_select=None,
             filenames = [f for f in dayfilenames if fnmatch.fnmatch(f, filenames)]
             #print(filenames)
 
-            for filename in filenames:
+            for filename in filenames[::-1]:
                 if len(list(buffersizes.keys()))>=maxnstation:
                     break
                 mseedid = '.'.join(filename.split('/')[-1].split('.')[:4])
@@ -114,7 +114,9 @@ def read(pastdays_select=None,
                 dfs.append(df[['name','arr_time','Latencies', 'Delays']])
                 
                 # get psd
+                print(filename.replace(slinktooldir,psddir)+'.npz')
                 filename = glob.glob(filename.replace(slinktooldir,psddir)+'.npz')
+                print(filename)
                 if len(filename):
                     print('loading',filename[0])
                     ppsd = PPSD.load_npz(filename[0])
