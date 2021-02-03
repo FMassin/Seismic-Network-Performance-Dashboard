@@ -53,11 +53,11 @@ def read(pastdays_select=None,
         d = timedelta(days = n)
         year = (now-d).year
         day = (now-d).timetuple().tm_yday
-        if '%s.%s'%(year,day) not in yeardays: 
+        if '%s.%03d'%(year,day) not in yeardays: 
             continue
         
         parts = (slinktooldir,year,year,day)
-        dayfilenames = '%s/%d/*/*/*.D/*.%d.%d'%parts      
+        dayfilenames = '%s/%d/*/*/*.D/*.%d.%03d'%parts      
         dayfilenames = dayfilenames.replace('//','/')
         #print(files)
         #print(dayfilenames)
@@ -71,7 +71,7 @@ def read(pastdays_select=None,
                 break
             # Read in data from slinktool
             parts = (slinktooldir,year,whitelist,year,day)
-            filenames = '%s/%d/*/*/*.D/%s.%d.%d'%parts       
+            filenames = '%s/%d/*/*/*.D/%s.%d.%03d'%parts       
             filenames = filenames.replace('//','/')
             #print(filenames)
             filenames = [f for f in dayfilenames if fnmatch.fnmatch(f, filenames)]
